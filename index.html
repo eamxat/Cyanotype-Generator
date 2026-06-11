@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cianotipia & Halftone - Zeqel</title>
+    <title>Cianotipia - Zeqel</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
 
@@ -304,7 +304,7 @@
 
     <div id="capture-modal" class="modal-overlay">
         <div class="modal-inner">
-            <h3> Exportar Cianotipia</h3>
+            <h3> Exportar</h3>
             <div class="res-options">
                 <button class="res-btn" data-w="1920" data-h="1080"><span>Full HD &nbsp; 1920 × 1080</span><span class="res-tag">2 MP</span></button>
                 <button class="res-btn" data-w="2560" data-h="1440"><span>QHD &nbsp; 2560 × 1440</span><span class="res-tag">3.7 MP</span></button>
@@ -353,6 +353,11 @@
         </div>
 
         <div class="separator"></div>
+
+        <div class="control-group" title="Ajusta la imagen sin recortar (ideal para fotos de celular)">
+            <label for="ctrl-fitmode">Ajustar</label>
+            <input type="checkbox" id="ctrl-fitmode">
+        </div>
 
         <div class="control-group" title="Invierte los colores como un negativo fotográfico real">
             <label for="ctrl-negative">Negativo</label>
@@ -427,6 +432,7 @@
         uniform float uDotSize;
         uniform float uNegative;
         uniform float uGrunge;
+        uniform float uFitMode;
 
         // Función de ruido para la textura de papel y desgaste químico
         float hash(vec2 p) {
@@ -458,30 +464,47 @@
             float lum = 0.5;
 
             if (uHasTexture > 0.5) {
-                // Lógica de "object-fit: cover" para ajustar la foto a la pantalla
+                // Lógica de ajuste a la pantalla (Contain o Cover)
                 vec2 imgUV = uv;
                 float screenAspect = uResolution.x / uResolution.y;
                 float imgAspect = uImageResolution.x / uImageResolution.y;
 
-                if (screenAspect > imgAspect) {
-                    float scale = imgAspect / screenAspect;
-                    imgUV.y = (uv.y - 0.5) * scale + 0.5;
+                if (uFitMode > 0.5) {
+                    // Contain: Mostrar imagen completa sin recortes
+                    if (screenAspect > imgAspect) {
+                        float scale = screenAspect / imgAspect;
+                        imgUV.x = (uv.x - 0.5) * scale + 0.5;
+                    } else {
+                        float scale = imgAspect / screenAspect;
+                        imgUV.y = (uv.y - 0.5) * scale + 0.5;
+                    }
                 } else {
-                    float scale = screenAspect / imgAspect;
-                    imgUV.x = (uv.x - 0.5) * scale + 0.5;
+                    // Cover: Rellenar pantalla (recortando bordes si es necesario)
+                    if (screenAspect > imgAspect) {
+                        float scale = imgAspect / screenAspect;
+                        imgUV.y = (uv.y - 0.5) * scale + 0.5;
+                    } else {
+                        float scale = screenAspect / imgAspect;
+                        imgUV.x = (uv.x - 0.5) * scale + 0.5;
+                    }
                 }
                 
                 // WebGL lee las imágenes invertidas en Y por defecto
                 imgUV.y = 1.0 - imgUV.y;
 
-                // Extraer color
-                vec4 tex = texture2D(uTexture, imgUV);
-                
-                // Escala de grises (Luminancia)
-                float imgLum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-                
-                // Si la imagen tiene transparencia, el fondo será 'blanco'
-                lum = mix(1.0, imgLum, tex.a);
+                // Verificación de límites para el modo Contain (rellena el resto con "papel")
+                if (imgUV.x < 0.0 || imgUV.x > 1.0 || imgUV.y < 0.0 || imgUV.y > 1.0) {
+                    lum = 1.0; 
+                } else {
+                    // Extraer color
+                    vec4 tex = texture2D(uTexture, imgUV);
+                    
+                    // Escala de grises (Luminancia)
+                    float imgLum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+                    
+                    // Si la imagen tiene transparencia, el fondo será 'blanco'
+                    lum = mix(1.0, imgLum, tex.a);
+                }
             } else {
                 // Papel fotográfico puro sin exponer (luminancia máxima)
                 lum = 1.0;
@@ -553,7 +576,7 @@
     const defaultConfig = {
         color1:'#001f3f', color2:'#0074d9', color3:'#ffffff', // Cianotipia default
         contrast: 1.2, brightness: 0.0, dotSize: 4.0,
-        halftone: false, negative: true, grunge: 0.6, isPanelOpen:true
+        halftone: false, negative: true, grunge: 0.6, fitMode: false, isPanelOpen:true
     };
 
     const palettes = [
@@ -658,7 +681,8 @@
             uHalftone:        gl.getUniformLocation(prog,'uHalftone'),
             uDotSize:         gl.getUniformLocation(prog,'uDotSize'),
             uNegative:        gl.getUniformLocation(prog,'uNegative'),
-            uGrunge:          gl.getUniformLocation(prog,'uGrunge')
+            uGrunge:          gl.getUniformLocation(prog,'uGrunge'),
+            uFitMode:         gl.getUniformLocation(prog,'uFitMode')
         };
         
         mainTexture = createWebGLTexture(gl, null); // Placeholder inicial
@@ -677,6 +701,7 @@
         gl.uniform1f(uniforms.uDotSize,    cfg.dotSize);
         gl.uniform1f(uniforms.uNegative,   cfg.negative ? 1.0 : 0.0);
         gl.uniform1f(uniforms.uGrunge,     cfg.grunge);
+        gl.uniform1f(uniforms.uFitMode,    cfg.fitMode ? 1.0 : 0.0);
 
         if (uploadedImage) {
             gl.uniform2f(uniforms.uImageResolution, uploadedImage.width, uploadedImage.height);
@@ -781,6 +806,7 @@
                 ogl.uniform1f(ou('uDotSize'), cfg.dotSize);
                 ogl.uniform1f(ou('uNegative'), cfg.negative ? 1.0 : 0.0);
                 ogl.uniform1f(ou('uGrunge'), cfg.grunge);
+                ogl.uniform1f(ou('uFitMode'), cfg.fitMode ? 1.0 : 0.0);
 
                 if (uploadedImage) {
                     ogl.uniform2f(ou('uImageResolution'), uploadedImage.width, uploadedImage.height);
@@ -816,6 +842,7 @@
     const controlsList = [
         { id:'ctrl-contrast',   key:'contrast',   type:'float' },
         { id:'ctrl-brightness', key:'brightness', type:'float' },
+        { id:'ctrl-fitmode',    key:'fitMode',    type:'bool' },
         { id:'ctrl-negative',   key:'negative',   type:'bool' },
         { id:'ctrl-grunge',     key:'grunge',     type:'float' },
         { id:'ctrl-dotsize',    key:'dotSize',    type:'float' },
