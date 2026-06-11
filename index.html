@@ -488,10 +488,16 @@
             lum = (lum - 0.5) * uContrast + 0.5 + uBrightness;
             lum = clamp(lum, 0.0, 1.0);
 
-            // Generar Textura Grunge / Papel Químico
-            float paperGrain = fbm(gridUv * 150.0);
+            // Generar Textura Grainy de Alta Calidad (Pixel-Perfect)
+            float noise1 = fract(sin(dot(gl_FragCoord.xy, vec2(17.1324, 83.9213))) * 43758.5453);
+            float noise2 = fract(sin(dot(gl_FragCoord.xy, vec2(35.8164, 91.3215))) * 43758.5453);
+            float paperGrain = (noise1 + noise2) * 0.5;
+            
+            // Manchas químicas (desgaste)
             float paperStain = fbm(gridUv * 3.0 + uTime * 0.02);
-            float grungeMix = (paperGrain * 0.4 + 0.6) * (paperStain * 0.6 + 0.4);
+            
+            // Mezcla: Grano fotográfico agudo y manchas químicas suaves
+            float grungeMix = (paperGrain * 0.5 + 0.5) * (paperStain * 0.6 + 0.4);
 
             vec3 finalCol = vec3(0.0);
 
